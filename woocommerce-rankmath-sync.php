@@ -26,6 +26,7 @@ define('WRMS_PLUGIN_URL', plugin_dir_url(__FILE__));
 // Include other plugin files
 require_once WRMS_PLUGIN_DIR . 'admin/admin-menu.php';
 require_once WRMS_PLUGIN_DIR . 'includes/sync-functions.php';
+require_once WRMS_PLUGIN_DIR . 'includes/sitemap-settings.php';
 require_once WRMS_PLUGIN_DIR . 'admin/settings.php';
 require_once WRMS_PLUGIN_DIR . 'includes/statistics.php';
 require_once WRMS_PLUGIN_DIR . 'includes/statistics-display.php';

@@ -30,6 +30,7 @@ function wrms_admin_page()
     <div class="wrms-tabs">
       <button class="wrms-tab-link active" data-tab="sync">Sync</button>
       <button class="wrms-tab-link" data-tab="url-download">URL Download</button>
+      <button class="wrms-tab-link" data-tab="sitemap-settings">Sitemap Settings</button>
       <button class="wrms-tab-link" data-tab="settings">Settings</button>
     </div>
 
@@ -69,8 +70,8 @@ function wrms_admin_page()
           <div id="sync-log" class="sync-log">
             <?php echo esc_html__('Sync logs will appear here once you start a sync process.', 'woocommerce-rankmath-sync'); ?>
           </div>
-          <div id="progress-bar">
-            <div id="progress-bar-fill"></div>
+          <div id="progress-bar" class="progress-bar">
+            <div id="progress-bar-fill" class="progress-bar-fill"></div>
           </div>
         </div>
       </div>
@@ -105,12 +106,56 @@ function wrms_admin_page()
         <h2>Plugin Settings</h2>
         <form method="post" action="options.php">
           <?php settings_fields('wrms_options_group'); ?>
-          <label for="wrms_auto_sync">
-            <input type="checkbox" id="wrms_auto_sync" name="wrms_auto_sync" value="1" <?php checked($auto_sync, '1'); ?> />
-            Automatically sync all content (products, categories, pages, media, posts) to RankMath
-          </label>
+          <table class="form-table">
+            <tr valign="top">
+              <th scope="row">Auto Sync</th>
+              <td>
+                <label for="wrms_auto_sync">
+                  <input type="checkbox" id="wrms_auto_sync" name="wrms_auto_sync" value="1" <?php checked($auto_sync, '1'); ?> />
+                  Automatically sync all content (products, categories, pages, media, posts) to RankMath
+                </label>
+              </td>
+            </tr>
+          </table>
           <?php submit_button('Save Settings'); ?>
         </form>
+      </div>
+
+      <div id="sitemap-settings" class="wrms-tab-pane">
+        <h2>Sitemap Settings</h2>
+        <form method="post" action="options.php" id="sitemap-settings-form">
+          <?php settings_fields('wrms_sitemap_options_group'); ?>
+          <h3>Additional Sitemaps</h3>
+          <div id="additional-sitemaps">
+            <?php
+            $additional_sitemaps = get_option('wrms_additional_sitemaps', array());
+            foreach ($additional_sitemaps as $index => $sitemap) {
+              echo '<div class="sitemap-input">';
+              echo '<input type="text" name="wrms_additional_sitemaps[]" value="' . esc_url($sitemap) . '" />';
+              echo '<button type="button" class="remove-sitemap">Remove</button>';
+              echo '</div>';
+            }
+            ?>
+          </div>
+          <button type="button" id="add-sitemap" class="button button-secondary">Add Sitemap</button>
+
+          <h3>Additional URLs</h3>
+          <div id="additional-urls">
+            <?php
+            $additional_urls = get_option('wrms_additional_urls', array());
+            foreach ($additional_urls as $index => $url) {
+              echo '<div class="url-input">';
+              echo '<input type="text" name="wrms_additional_urls[]" value="' . esc_url($url) . '" />';
+              echo '<button type="button" class="remove-url">Remove</button>';
+              echo '</div>';
+            }
+            ?>
+          </div>
+          <button type="button" id="add-url" class="button button-secondary">Add URL</button>
+
+          <?php submit_button('Save Sitemap Settings'); ?>
+        </form>
+        <button id="refresh-sitemap" class="button button-primary">Refresh Sitemap</button>
       </div>
     </div>
 

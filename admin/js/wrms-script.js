@@ -1,15 +1,11 @@
-jQuery(document).ready(function ($) {
-  // Tab functionality
-  $(".wrms-tab-link").click(function () {
-    var tabId = $(this).data("tab");
-    $(".wrms-tab-link").removeClass("active");
-    $(".wrms-tab-pane").removeClass("active");
-    $(this).addClass("active");
-    $("#" + tabId).addClass("active");
-  });
+(function () {
+  "use strict";
+
+  // Wait for DOM to be ready
+  document.addEventListener("DOMContentLoaded", init);
 
   // Content type configurations
-  var contentTypes = {
+  const contentTypes = {
     product: {
       singular: "product",
       plural: "products",
@@ -17,7 +13,7 @@ jQuery(document).ready(function ($) {
       syncAction: "wrms_sync_next_product",
       removeAction: "wrms_remove_product_meta",
       titleKey: "title",
-      itemKey: "product"
+      itemKey: "product",
     },
     category: {
       singular: "category",
@@ -26,7 +22,7 @@ jQuery(document).ready(function ($) {
       syncAction: "wrms_sync_next_category",
       removeAction: "wrms_remove_category_meta",
       titleKey: "name",
-      itemKey: "category"
+      itemKey: "category",
     },
     page: {
       singular: "page",
@@ -35,7 +31,7 @@ jQuery(document).ready(function ($) {
       syncAction: "wrms_sync_next_page",
       removeAction: "wrms_remove_page_meta",
       titleKey: "title",
-      itemKey: "page"
+      itemKey: "page",
     },
     media: {
       singular: "media item",
@@ -44,7 +40,7 @@ jQuery(document).ready(function ($) {
       syncAction: "wrms_sync_next_media",
       removeAction: "wrms_remove_media_meta",
       titleKey: "title",
-      itemKey: "media"
+      itemKey: "media",
     },
     post: {
       singular: "post",
@@ -53,290 +49,548 @@ jQuery(document).ready(function ($) {
       syncAction: "wrms_sync_next_post",
       removeAction: "wrms_remove_post_meta",
       titleKey: "title",
-      itemKey: "post"
-    }
+      itemKey: "post",
+    },
   };
 
-  // Batch size for sync operations (10x faster than single item processing)
-  var BATCH_SIZE = 10;
+  // Batch size for sync operations
+  const BATCH_SIZE = 10;
 
-  // Generic sync function with batch processing
-  function syncContentType(type) {
-    var config = contentTypes[type];
-    var total = 0;
-    var processed = 0;
+  // Helper functions
+  function $(selector) {
+    return document.querySelector(selector);
+  }
 
-    $("#progress-bar").show();
-    $("#sync-loader").show();
-    $("#sync-log").html("");
-    $("#progress-bar-fill").css("width", "0%");
+  function $$(selector) {
+    return document.querySelectorAll(selector);
+  }
 
-    // Get count first
-    $.ajax({
-      url: wrms_data.ajax_url,
-      method: "POST",
-      data: {
-        action: config.countAction,
-        nonce: wrms_data.nonce
-      },
-      success: function (response) {
-        if (response.success) {
-          total = response.data.count;
-          $("#sync-count").text("Processing 0 of " + total + " " + config.plural);
-          processNextBatch();
-        } else {
-          $("#sync-status").append("<p>Error: " + response.data.message + "</p>");
-          hideLoader();
-        }
-      },
-      error: function (xhr, status, error) {
-        $("#sync-status").append("<p>Error: " + error + "</p>");
-        hideLoader();
+  function show(el) {
+    if (el) el.style.display = "block";
+  }
+
+  function hide(el) {
+    if (el) el.style.display = "none";
+  }
+
+  function setText(el, text) {
+    if (el) el.textContent = text;
+  }
+
+  function setHtml(el, html) {
+    if (el) el.innerHTML = html;
+  }
+
+  function appendHtml(el, html) {
+    if (el) el.insertAdjacentHTML("beforeend", html);
+  }
+
+  function setWidth(el, percent) {
+    if (el) el.style.width = percent + "%";
+  }
+
+  function scrollToBottom(el) {
+    if (el) el.scrollTop = el.scrollHeight;
+  }
+
+  // AJAX helper using Fetch API
+  async function ajax(action, data = {}) {
+    const formData = new FormData();
+    formData.append("action", action);
+    formData.append("nonce", wrms_data.nonce);
+
+    for (const [key, value] of Object.entries(data)) {
+      if (Array.isArray(value)) {
+        value.forEach((v) => formData.append(key + "[]", v));
+      } else {
+        formData.append(key, value);
       }
+    }
+
+    const response = await fetch(wrms_data.ajax_url, {
+      method: "POST",
+      body: formData,
     });
 
-    function processNextBatch() {
-      $.ajax({
-        url: wrms_data.ajax_url,
-        method: "POST",
-        data: {
-          action: config.syncAction,
-          nonce: wrms_data.nonce,
-          batch_size: BATCH_SIZE
-        },
-        success: function (response) {
-          if (response.success && response.data.processed > 0) {
-            processed += response.data.processed;
-            var items = response.data.items || [response.data[config.itemKey]];
+    return response.json();
+  }
 
-            // Log batch progress
-            items.forEach(function(item) {
-              var title = item[config.titleKey] || item.name || item.title;
-              $("#sync-log").append(
-                "<p>Synced: " + title + " (ID: " + item.id + ")</p>"
-              );
-            });
+  // Initialize
+  function init() {
+    initTabs();
+    initSyncButtons();
+    initRemoveButtons();
+    initAutoSync();
+    initStats();
+    initUrlDownload();
+    loadLastSyncTime();
+  }
 
-            $("#sync-count").text("Processing " + processed + " of " + total + " " + config.plural);
-            $("#sync-log").scrollTop($("#sync-log")[0].scrollHeight);
-            $("#progress-bar-fill").css("width", (processed / total) * 100 + "%");
+  // Tab functionality
+  function initTabs() {
+    $$(".wrms-tab-link").forEach((tab) => {
+      tab.addEventListener("click", () => {
+        const tabId = tab.dataset.tab;
 
-            if (processed < total) {
-              processNextBatch();
-            } else {
-              finishSync(config.plural + " synced successfully!");
-            }
-          } else if (!response.success) {
-            finishSync("Error: " + response.data.message);
-          } else {
-            finishSync("All " + config.plural + " are already synced.");
-          }
-        },
-        error: function (xhr, status, error) {
-          finishSync("Error during syncing: " + error);
+        $$(".wrms-tab-link").forEach((t) => t.classList.remove("active"));
+        $$(".wrms-tab-pane").forEach((p) => p.classList.remove("active"));
+
+        tab.classList.add("active");
+        const pane = $("#" + tabId);
+        if (pane) pane.classList.add("active");
+      });
+    });
+  }
+
+  // Sync buttons
+  function initSyncButtons() {
+    const buttons = {
+      "sync-products": "product",
+      "sync-categories": "category",
+      "sync-pages": "page",
+      "sync-media": "media",
+      "sync-posts": "post",
+    };
+
+    for (const [id, type] of Object.entries(buttons)) {
+      const btn = $("#" + id);
+      if (btn) {
+        btn.addEventListener("click", () => syncContentType(type));
+      }
+    }
+  }
+
+  // Remove buttons
+  function initRemoveButtons() {
+    const buttons = {
+      "remove-product-meta": "product",
+      "remove-category-meta": "category",
+      "remove-page-meta": "page",
+      "remove-media-meta": "media",
+      "remove-post-meta": "post",
+    };
+
+    for (const [id, type] of Object.entries(buttons)) {
+      const btn = $("#" + id);
+      if (btn) {
+        btn.addEventListener("click", () => removeContentMeta(type));
+      }
+    }
+  }
+
+  // Auto-sync toggle
+  function initAutoSync() {
+    const toggle = $("#wrms_auto_sync");
+    if (toggle) {
+      toggle.addEventListener("change", async () => {
+        try {
+          await ajax("wrms_update_auto_sync", {
+            auto_sync: toggle.checked ? 1 : 0,
+          });
+        } catch (error) {
+          alert("Error updating auto-sync setting: " + error.message);
         }
       });
+    }
+  }
+
+  // Statistics
+  function initStats() {
+    const btn = $("#update-stats");
+    if (btn) {
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        updateStats();
+      });
+    }
+  }
+
+  async function updateStats() {
+    const btn = $("#update-stats");
+    if (btn) {
+      btn.disabled = true;
+      setText(btn, "Updating...");
+    }
+
+    try {
+      const response = await ajax("wrms_update_stats");
+
+      if (response.success) {
+        const s = response.data;
+        setText($("#total-products"), s.total_products);
+        setText($("#synced-products"), s.synced_products);
+        setText($("#total-pages"), s.total_pages);
+        setText($("#synced-pages"), s.synced_pages);
+        setText($("#total-media"), s.total_media);
+        setText($("#synced-media"), s.synced_media);
+        setText($("#total-categories"), s.total_categories);
+        setText($("#synced-categories"), s.synced_categories);
+        setText($("#total-posts"), s.total_posts);
+        setText($("#synced-posts"), s.synced_posts);
+        setText($("#total-items"), s.total_items);
+        setText($("#total-synced"), s.total_synced);
+        setText($("#sync-percentage"), s.sync_percentage + "%");
+        setText(
+          $("#last-updated"),
+          new Date(s.timestamp * 1000).toLocaleString()
+        );
+      }
+    } catch (error) {
+      console.error("Failed to update stats:", error);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        setText(btn, "Update Statistics");
+      }
+    }
+  }
+
+  // Generic sync function with batch processing
+  async function syncContentType(type) {
+    const config = contentTypes[type];
+    let total = 0;
+    let processed = 0;
+
+    show($("#progress-bar"));
+    show($("#sync-loader"));
+    setHtml($("#sync-log"), "");
+    setWidth($("#progress-bar-fill"), 0);
+
+    try {
+      // Get count first
+      const countResponse = await ajax(config.countAction);
+
+      if (!countResponse.success) {
+        appendHtml(
+          $("#sync-status"),
+          `<p>Error: ${countResponse.data?.message || "Unknown error"}</p>`
+        );
+        hideLoader();
+        return;
+      }
+
+      total = countResponse.data.count;
+      setText($("#sync-count"), `Processing 0 of ${total} ${config.plural}`);
+
+      // Process in batches
+      while (processed < total) {
+        const response = await ajax(config.syncAction, {
+          batch_size: BATCH_SIZE,
+        });
+
+        if (response.success && response.data.processed > 0) {
+          processed += response.data.processed;
+          const items = response.data.items || [response.data[config.itemKey]];
+
+          // Log batch progress
+          items.forEach((item) => {
+            const title = item[config.titleKey] || item.name || item.title;
+            appendHtml(
+              $("#sync-log"),
+              `<p>Synced: ${title} (ID: ${item.id})</p>`
+            );
+          });
+
+          setText(
+            $("#sync-count"),
+            `Processing ${processed} of ${total} ${config.plural}`
+          );
+          scrollToBottom($("#sync-log"));
+          setWidth($("#progress-bar-fill"), (processed / total) * 100);
+        } else if (!response.success) {
+          finishSync(`Error: ${response.data?.message || "Unknown error"}`);
+          return;
+        } else {
+          // No more items to process
+          break;
+        }
+      }
+
+      finishSync(
+        processed > 0
+          ? `${config.plural} synced successfully!`
+          : `All ${config.plural} are already synced.`
+      );
+    } catch (error) {
+      finishSync(`Error during syncing: ${error.message}`);
     }
   }
 
   // Generic remove meta function
-  function removeContentMeta(type) {
-    var config = contentTypes[type];
+  async function removeContentMeta(type) {
+    const config = contentTypes[type];
 
-    $("#progress-bar").show();
-    $("#sync-loader").show();
-    $("#sync-log").html("");
-    $("#progress-bar-fill").css("width", "0%");
+    show($("#progress-bar"));
+    show($("#sync-loader"));
+    setHtml($("#sync-log"), "");
+    setWidth($("#progress-bar-fill"), 0);
 
-    $.ajax({
-      url: wrms_data.ajax_url,
-      method: "POST",
-      data: {
-        action: config.removeAction,
-        nonce: wrms_data.nonce
-      },
-      success: function (response) {
-        if (response.success) {
-          var removed = response.data.removed;
-          var total = response.data.total;
-          $("#sync-count").text("Removed meta from " + removed + " of " + total + " " + config.plural);
-          $("#sync-log").append("<p>" + config.plural.charAt(0).toUpperCase() + config.plural.slice(1) + " meta removed successfully!</p>");
-          $("#progress-bar-fill").css("width", total > 0 ? (removed / total) * 100 + "%" : "100%");
-        } else {
-          $("#sync-status").append("<p>Error: " + response.data.message + "</p>");
-        }
-        hideLoader();
-        updateStats();
-      },
-      error: function (xhr, status, error) {
-        $("#sync-status").append("<p>Error: " + error + "</p>");
-        hideLoader();
-        updateStats();
+    try {
+      const response = await ajax(config.removeAction);
+
+      if (response.success) {
+        const { removed, total } = response.data;
+        setText(
+          $("#sync-count"),
+          `Removed meta from ${removed} of ${total} ${config.plural}`
+        );
+        appendHtml(
+          $("#sync-log"),
+          `<p>${config.plural.charAt(0).toUpperCase() + config.plural.slice(1)} meta removed successfully!</p>`
+        );
+        setWidth($("#progress-bar-fill"), total > 0 ? (removed / total) * 100 : 100);
+      } else {
+        appendHtml(
+          $("#sync-status"),
+          `<p>Error: ${response.data?.message || "Unknown error"}</p>`
+        );
       }
-    });
+    } catch (error) {
+      appendHtml($("#sync-status"), `<p>Error: ${error.message}</p>`);
+    } finally {
+      hideLoader();
+      updateStats();
+    }
   }
 
   function hideLoader() {
-    $("#sync-loader").hide();
+    hide($("#sync-loader"));
   }
 
   function finishSync(message) {
     hideLoader();
-    $("#sync-status").append("<p>" + message + "</p>");
+    appendHtml($("#sync-status"), `<p>${message}</p>`);
     updateStats();
   }
 
-  // Bind sync buttons
-  $("#sync-products").click(function () { syncContentType("product"); });
-  $("#sync-categories").click(function () { syncContentType("category"); });
-  $("#sync-pages").click(function () { syncContentType("page"); });
-  $("#sync-media").click(function () { syncContentType("media"); });
-  $("#sync-posts").click(function () { syncContentType("post"); });
-
-  // Bind remove buttons
-  $("#remove-product-meta").click(function () { removeContentMeta("product"); });
-  $("#remove-category-meta").click(function () { removeContentMeta("category"); });
-  $("#remove-page-meta").click(function () { removeContentMeta("page"); });
-  $("#remove-media-meta").click(function () { removeContentMeta("media"); });
-  $("#remove-post-meta").click(function () { removeContentMeta("post"); });
-
-  // Auto-sync toggle
-  $("#wrms_auto_sync").on("change", function () {
-    var isChecked = $(this).is(":checked");
-    $.ajax({
-      url: wrms_data.ajax_url,
-      method: "POST",
-      data: {
-        action: "wrms_update_auto_sync",
-        auto_sync: isChecked ? 1 : 0,
-        nonce: wrms_data.nonce
-      },
-      error: function (xhr, status, error) {
-        alert("Error updating auto-sync setting: " + error);
-      }
-    });
-  });
-
-  // Update Statistics
-  $("#update-stats").on("click", function (e) {
-    e.preventDefault();
-    updateStats();
-  });
-
-  function updateStats() {
-    var button = $("#update-stats");
-    button.prop("disabled", true).text("Updating...");
-
-    $.ajax({
-      url: wrms_data.ajax_url,
-      type: "POST",
-      data: {
-        action: "wrms_update_stats",
-        nonce: wrms_data.nonce
-      },
-      success: function (response) {
-        if (response.success) {
-          var s = response.data;
-          $("#total-products").text(s.total_products);
-          $("#synced-products").text(s.synced_products);
-          $("#total-pages").text(s.total_pages);
-          $("#synced-pages").text(s.synced_pages);
-          $("#total-media").text(s.total_media);
-          $("#synced-media").text(s.synced_media);
-          $("#total-categories").text(s.total_categories);
-          $("#synced-categories").text(s.synced_categories);
-          $("#total-posts").text(s.total_posts);
-          $("#synced-posts").text(s.synced_posts);
-          $("#total-items").text(s.total_items);
-          $("#total-synced").text(s.total_synced);
-          $("#sync-percentage").text(s.sync_percentage + "%");
-          $("#last-updated").text(new Date(s.timestamp * 1000).toLocaleString());
-        }
-      },
-      complete: function () {
-        button.prop("disabled", false).text("Update Statistics");
-      }
-    });
+  // URL Download
+  function initUrlDownload() {
+    const btn = $("#download-urls");
+    if (btn) {
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        downloadUrls();
+      });
+    }
   }
 
-  // Download URLs
-  $("#download-urls").click(function (e) {
-    e.preventDefault();
-    var urlTypes = $('input[name="url_types[]"]:checked').map(function () {
-      return this.value;
-    }).get();
+  async function downloadUrls() {
+    const checkboxes = $$('input[name="url_types[]"]:checked');
+    const urlTypes = Array.from(checkboxes).map((cb) => cb.value);
 
     if (urlTypes.length === 0) {
-      $("#download-status").text("Please select at least one URL type to download.");
+      setText(
+        $("#download-status"),
+        "Please select at least one URL type to download."
+      );
       return;
     }
 
-    $("#progress-bar").show();
-    $("#download-loader").show();
-    $("#download-log").html("");
-    $("#download-progress-bar-fill").css("width", "0%");
+    show($("#progress-bar"));
+    show($("#download-loader"));
+    setHtml($("#download-log"), "");
+    setWidth($("#download-progress-bar-fill"), 0);
 
-    var offset = 0;
-    var chunkSize = 2000;
+    let offset = 0;
+    const chunkSize = 2000;
 
-    function downloadChunk() {
-      $.ajax({
-        url: wrms_data.ajax_url,
-        type: "POST",
-        data: {
-          action: "wrms_get_urls",
-          nonce: wrms_data.nonce,
-          offset: offset,
+    try {
+      while (true) {
+        const response = await ajax("wrms_get_urls", {
+          offset,
           chunk_size: chunkSize,
-          url_types: urlTypes
-        },
-        success: function (response) {
-          if (response.success && response.data.urls.length > 0) {
-            var blob = new Blob([response.data.urls.join("\n")], { type: "text/plain" });
-            var link = document.createElement("a");
-            link.href = window.URL.createObjectURL(blob);
-            link.download = "urls_" + offset + "-" + (offset + response.data.urls.length) + ".txt";
-            link.click();
+          url_types: urlTypes,
+        });
 
-            var end = offset + response.data.urls.length;
-            $("#download-count").text("Downloaded URLs " + offset + " to " + end);
-            $("#download-log").append("<p>Downloaded URLs " + offset + " to " + end + "</p>");
-            $("#download-log").scrollTop($("#download-log")[0].scrollHeight);
-            $("#download-progress-bar-fill").css("width", (end / response.data.total) * 100 + "%");
+        if (response.success && response.data.urls.length > 0) {
+          // Create and download file
+          const blob = new Blob([response.data.urls.join("\n")], {
+            type: "text/plain",
+          });
+          const link = document.createElement("a");
+          link.href = URL.createObjectURL(blob);
+          link.download = `urls_${offset}-${offset + response.data.urls.length}.txt`;
+          link.click();
+          URL.revokeObjectURL(link.href);
 
-            offset += chunkSize;
-            downloadChunk();
-          } else {
-            $("#download-count").text("All URLs have been downloaded.");
-            $("#download-log").append("<p>All URLs have been downloaded.</p>");
-            $("#download-loader").hide();
-          }
-        },
-        error: function (xhr, status, error) {
-          $("#download-loader").hide();
-          $("#download-status").append("<p>Error: " + error + "</p>");
-        }
-      });
-    }
+          const end = offset + response.data.urls.length;
+          setText($("#download-count"), `Downloaded URLs ${offset} to ${end}`);
+          appendHtml(
+            $("#download-log"),
+            `<p>Downloaded URLs ${offset} to ${end}</p>`
+          );
+          scrollToBottom($("#download-log"));
+          setWidth(
+            $("#download-progress-bar-fill"),
+            (end / response.data.total) * 100
+          );
 
-    downloadChunk();
-  });
-
-  // Get last sync time on page load
-  $.ajax({
-    url: wrms_data.ajax_url,
-    method: "POST",
-    data: {
-      action: "wrms_get_last_sync_time",
-      nonce: wrms_data.nonce
-    },
-    success: function (response) {
-      if (response.success && response.data.last_sync_time) {
-        var timestamp = response.data.last_sync_time;
-        if (timestamp > 0) {
-          $("#last-sync-time").text("Last sync: " + new Date(timestamp * 1000).toLocaleString());
+          offset += chunkSize;
+        } else {
+          setText($("#download-count"), "All URLs have been downloaded.");
+          appendHtml(
+            $("#download-log"),
+            "<p>All URLs have been downloaded.</p>"
+          );
+          hide($("#download-loader"));
+          break;
         }
       }
+    } catch (error) {
+      hide($("#download-loader"));
+      appendHtml($("#download-status"), `<p>Error: ${error.message}</p>`);
+    }
+  }
+
+  // Load last sync time on page load
+  async function loadLastSyncTime() {
+    try {
+      const response = await ajax("wrms_get_last_sync_time");
+
+      if (response.success && response.data.last_sync_time > 0) {
+        const timestamp = response.data.last_sync_time;
+        setText(
+          $("#last-sync-time"),
+          `Last sync: ${new Date(timestamp * 1000).toLocaleString()}`
+        );
+      }
+    } catch (error) {
+      console.error("Failed to load last sync time:", error);
+    }
+  }
+
+  // =============================================================================
+  // SEO AUTOMATION TAB
+  // =============================================================================
+
+  // Bulk update ALT texts
+  const bulkAltBtn = $("#bulk-update-alts");
+  if (bulkAltBtn) {
+    bulkAltBtn.addEventListener("click", async () => {
+      const statusEl = $("#alt-update-status");
+      bulkAltBtn.disabled = true;
+      setText(bulkAltBtn, "Updating...");
+      setText(statusEl, "");
+
+      try {
+        const response = await ajax("wrms_bulk_update_alts");
+
+        if (response.success) {
+          setText(statusEl, response.data.message);
+          statusEl.classList.add("success");
+          statusEl.classList.remove("error");
+        } else {
+          setText(statusEl, "Error: " + (response.data?.message || "Unknown error"));
+          statusEl.classList.add("error");
+          statusEl.classList.remove("success");
+        }
+      } catch (error) {
+        setText(statusEl, "Error: " + error.message);
+        statusEl.classList.add("error");
+      } finally {
+        bulkAltBtn.disabled = false;
+        setText(bulkAltBtn, "Update Missing ALT Texts");
+      }
+    });
+  }
+
+  // Save automation settings
+  const saveAutomationBtn = $("#save-automation-settings");
+  if (saveAutomationBtn) {
+    saveAutomationBtn.addEventListener("click", async () => {
+      saveAutomationBtn.disabled = true;
+      setText(saveAutomationBtn, "Saving...");
+
+      const noindexOutOfStock = $("#noindex-out-of-stock")?.checked ? "1" : "0";
+      const noindexDateArchives = $("#noindex-date-archives")?.checked ? "1" : "0";
+
+      try {
+        await ajax("wrms_save_automation_settings", {
+          noindex_out_of_stock: noindexOutOfStock,
+          noindex_date_archives: noindexDateArchives,
+        });
+
+        setText(saveAutomationBtn, "Saved!");
+        setTimeout(() => {
+          setText(saveAutomationBtn, "Save Settings");
+        }, 2000);
+      } catch (error) {
+        alert("Error saving settings: " + error.message);
+      } finally {
+        saveAutomationBtn.disabled = false;
+      }
+    });
+  }
+
+  // =============================================================================
+  // SITEMAP SETTINGS TAB
+  // =============================================================================
+
+  // Add sitemap input
+  const addSitemapBtn = $("#add-sitemap");
+  if (addSitemapBtn) {
+    addSitemapBtn.addEventListener("click", () => {
+      const container = $("#additional-sitemaps");
+      if (container) {
+        appendHtml(
+          container,
+          `<div class="sitemap-input">
+            <input type="text" name="wrms_additional_sitemaps[]" placeholder="https://example.com/sitemap.xml" />
+            <button type="button" class="remove-sitemap button">Remove</button>
+          </div>`
+        );
+      }
+    });
+  }
+
+  // Add URL input
+  const addUrlBtn = $("#add-url");
+  if (addUrlBtn) {
+    addUrlBtn.addEventListener("click", () => {
+      const container = $("#additional-urls");
+      if (container) {
+        appendHtml(
+          container,
+          `<div class="url-input">
+            <input type="text" name="wrms_additional_urls[]" placeholder="https://example.com/page" />
+            <button type="button" class="remove-url button">Remove</button>
+          </div>`
+        );
+      }
+    });
+  }
+
+  // Remove sitemap/url buttons (event delegation)
+  document.addEventListener("click", (e) => {
+    if (e.target.classList.contains("remove-sitemap")) {
+      e.target.closest(".sitemap-input")?.remove();
+    }
+    if (e.target.classList.contains("remove-url")) {
+      e.target.closest(".url-input")?.remove();
     }
   });
-});
+
+  // Refresh sitemap
+  const refreshSitemapBtn = $("#refresh-sitemap");
+  if (refreshSitemapBtn) {
+    refreshSitemapBtn.addEventListener("click", async () => {
+      refreshSitemapBtn.disabled = true;
+      setText(refreshSitemapBtn, "Refreshing...");
+
+      try {
+        const response = await ajax("wrms_refresh_sitemap");
+
+        if (response.success) {
+          alert(response.data.message || "Sitemap refreshed successfully!");
+        } else {
+          alert("Error: " + (response.data?.message || "Unknown error"));
+        }
+      } catch (error) {
+        alert("Error refreshing sitemap: " + error.message);
+      } finally {
+        refreshSitemapBtn.disabled = false;
+        setText(refreshSitemapBtn, "Refresh Sitemap");
+      }
+    });
+  }
+})();

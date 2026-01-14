@@ -182,6 +182,140 @@ html {
     margin-top: 1rem;
 }
 
+/* SEO Automation Tab */
+.wrms-automation-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(15.625rem, 1fr));
+    gap: 1.25rem;
+    margin-bottom: 1.5rem;
+}
+
+.wrms-automation-box {
+    background-color: #f9f9f9;
+    border: 0.0625rem solid #e5e5e5;
+    border-radius: 0.3125rem;
+    padding: 1.25rem;
+    position: relative;
+}
+
+.wrms-automation-box h3 {
+    margin-top: 0;
+    margin-bottom: 0.625rem;
+    font-size: 1rem;
+    color: #23282d;
+}
+
+.wrms-automation-box p {
+    color: #666;
+    font-size: 0.875rem;
+    line-height: 1.5;
+    margin-bottom: 0.75rem;
+}
+
+.feature-list {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 0.75rem 0;
+}
+
+.feature-list li {
+    font-size: 0.8125rem;
+    color: #555;
+    padding: 0.25rem 0;
+    padding-left: 1.25rem;
+    position: relative;
+}
+
+.feature-list li::before {
+    content: "✓";
+    position: absolute;
+    left: 0;
+    color: #46b450;
+    font-weight: bold;
+}
+
+.badge {
+    display: inline-block;
+    padding: 0.25rem 0.625rem;
+    border-radius: 0.1875rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.badge-active {
+    background-color: #d4edda;
+    color: #155724;
+}
+
+.badge-inactive {
+    background-color: #f8d7da;
+    color: #721c24;
+}
+
+.status-message {
+    margin-top: 0.625rem;
+    padding: 0.5rem;
+    border-radius: 0.1875rem;
+    font-size: 0.875rem;
+}
+
+.status-message.success {
+    background-color: #d4edda;
+    color: #155724;
+}
+
+.status-message.error {
+    background-color: #f8d7da;
+    color: #721c24;
+}
+
+.wrms-automation-settings {
+    background-color: #fff;
+    border: 0.0625rem solid #ccc;
+    border-radius: 0.3125rem;
+    padding: 1.25rem;
+    margin-top: 1.5rem;
+}
+
+.wrms-automation-settings h3 {
+    margin-top: 0;
+    margin-bottom: 1rem;
+    font-size: 1.125rem;
+    color: #23282d;
+}
+
+.wrms-automation-settings .form-table th {
+    padding-left: 0;
+}
+
+.wrms-automation-settings code {
+    background-color: #f1f1f1;
+    padding: 0.125rem 0.375rem;
+    border-radius: 0.1875rem;
+    font-size: 0.8125rem;
+}
+
+/* Sitemap Settings Tab */
+.sitemap-input,
+.url-input {
+    display: flex;
+    gap: 0.625rem;
+    margin-bottom: 0.625rem;
+}
+
+.sitemap-input input,
+.url-input input {
+    flex: 1;
+    max-width: 25rem;
+}
+
+#add-sitemap,
+#add-url {
+    margin-top: 0.625rem;
+    margin-bottom: 1rem;
+}
+
 /* Responsive adjustments */
 @media screen and (max-width: 48.875rem) {
 

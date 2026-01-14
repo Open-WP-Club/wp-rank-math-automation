@@ -3,14 +3,14 @@
  * Plugin Name:             WordPress RankMath Sync
  * Plugin URI:              https://github.com/MrGKanev/wo-rank-math-automation/
  * Description:             Copies WooCommerce product, category, WordPress post, page, and media information to RankMath's meta information.
- * Version:                 0.0.6
+ * Version:                 0.0.7
  * Author:                  Gabriel Kanev
  * Author URI:              https://gkanev.com
  * License:                 GPL-2.0 License
  * Requires Plugins:        seo-by-rank-math
- * Requires at least:       6.0
- * Requires PHP:            7.4
- * Tested up to:            6.6.1
+ * Requires at least:       6.4
+ * Requires PHP:            8.2
+ * Tested up to:            6.9
  */
 
 // Exit if accessed directly.
@@ -19,7 +19,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('WRMS_VERSION', '0.0.6');
+define('WRMS_VERSION', '0.0.7');
 define('WRMS_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('WRMS_PLUGIN_URL', plugin_dir_url(__FILE__));
 
@@ -78,7 +78,7 @@ function wrms_enqueue_admin_scripts($hook)
     if ($hook != 'tools_page_woocommerce-rankmath-sync') {
         return;
     }
-    wp_enqueue_script('wrms-script', WRMS_PLUGIN_URL . 'admin/js/wrms-script.js', array('jquery'), WRMS_VERSION, true);
+    wp_enqueue_script('wrms-script', WRMS_PLUGIN_URL . 'admin/js/wrms-script.js', array(), WRMS_VERSION, true);
     wp_enqueue_style('wrms-style', WRMS_PLUGIN_URL . 'assets/css/wrms-style.css', array(), WRMS_VERSION);
     wp_localize_script('wrms-script', 'wrms_data', array(
         'ajax_url' => admin_url('admin-ajax.php'),

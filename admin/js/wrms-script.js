@@ -2,87 +2,219 @@ jQuery(document).ready(function ($) {
   // Tab functionality
   $(".wrms-tab-link").click(function () {
     var tabId = $(this).data("tab");
-
     $(".wrms-tab-link").removeClass("active");
     $(".wrms-tab-pane").removeClass("active");
-
     $(this).addClass("active");
     $("#" + tabId).addClass("active");
   });
 
-  // Sync Products
-  $("#sync-products").click(function () {
-    $("#progress-bar").show();
-    $("#sync-loader").show();
-    syncProducts();
-  });
+  // Content type configurations
+  var contentTypes = {
+    product: {
+      singular: "product",
+      plural: "products",
+      countAction: "wrms_get_product_count",
+      syncAction: "wrms_sync_next_product",
+      removeAction: "wrms_remove_product_meta",
+      titleKey: "title",
+      itemKey: "product"
+    },
+    category: {
+      singular: "category",
+      plural: "categories",
+      countAction: "wrms_get_category_count",
+      syncAction: "wrms_sync_next_category",
+      removeAction: "wrms_remove_category_meta",
+      titleKey: "name",
+      itemKey: "category"
+    },
+    page: {
+      singular: "page",
+      plural: "pages",
+      countAction: "wrms_get_page_count",
+      syncAction: "wrms_sync_next_page",
+      removeAction: "wrms_remove_page_meta",
+      titleKey: "title",
+      itemKey: "page"
+    },
+    media: {
+      singular: "media item",
+      plural: "media items",
+      countAction: "wrms_get_media_count",
+      syncAction: "wrms_sync_next_media",
+      removeAction: "wrms_remove_media_meta",
+      titleKey: "title",
+      itemKey: "media"
+    },
+    post: {
+      singular: "post",
+      plural: "posts",
+      countAction: "wrms_get_post_count",
+      syncAction: "wrms_sync_next_post",
+      removeAction: "wrms_remove_post_meta",
+      titleKey: "title",
+      itemKey: "post"
+    }
+  };
 
-  // Sync Categories
-  $("#sync-categories").click(function () {
-    $("#progress-bar").show();
-    $("#sync-loader").show();
-    syncCategories();
-  });
+  // Batch size for sync operations (10x faster than single item processing)
+  var BATCH_SIZE = 10;
 
-  // Sync Pages
-  $("#sync-pages").click(function () {
-    $("#progress-bar").show();
-    $("#sync-loader").show();
-    syncPages();
-  });
+  // Generic sync function with batch processing
+  function syncContentType(type) {
+    var config = contentTypes[type];
+    var total = 0;
+    var processed = 0;
 
-  // Sync Media
-  $("#sync-media").click(function () {
     $("#progress-bar").show();
     $("#sync-loader").show();
-    syncMedia();
-  });
+    $("#sync-log").html("");
+    $("#progress-bar-fill").css("width", "0%");
 
-  // Sync Posts
-  $("#sync-posts").click(function () {
-    $("#progress-bar").show();
-    $("#sync-loader").show();
-    syncPosts();
-  });
+    // Get count first
+    $.ajax({
+      url: wrms_data.ajax_url,
+      method: "POST",
+      data: {
+        action: config.countAction,
+        nonce: wrms_data.nonce
+      },
+      success: function (response) {
+        if (response.success) {
+          total = response.data.count;
+          $("#sync-count").text("Processing 0 of " + total + " " + config.plural);
+          processNextBatch();
+        } else {
+          $("#sync-status").append("<p>Error: " + response.data.message + "</p>");
+          hideLoader();
+        }
+      },
+      error: function (xhr, status, error) {
+        $("#sync-status").append("<p>Error: " + error + "</p>");
+        hideLoader();
+      }
+    });
 
-  // Remove Product Meta
-  $("#remove-product-meta").click(function () {
-    $("#progress-bar").show();
-    $("#sync-loader").show();
-    removeProductMeta();
-  });
+    function processNextBatch() {
+      $.ajax({
+        url: wrms_data.ajax_url,
+        method: "POST",
+        data: {
+          action: config.syncAction,
+          nonce: wrms_data.nonce,
+          batch_size: BATCH_SIZE
+        },
+        success: function (response) {
+          if (response.success && response.data.processed > 0) {
+            processed += response.data.processed;
+            var items = response.data.items || [response.data[config.itemKey]];
 
-  // Remove Category Meta
-  $("#remove-category-meta").click(function () {
-    $("#progress-bar").show();
-    $("#sync-loader").show();
-    removeCategoryMeta();
-  });
+            // Log batch progress
+            items.forEach(function(item) {
+              var title = item[config.titleKey] || item.name || item.title;
+              $("#sync-log").append(
+                "<p>Synced: " + title + " (ID: " + item.id + ")</p>"
+              );
+            });
 
-  // Remove Page Meta
-  $("#remove-page-meta").click(function () {
-    $("#progress-bar").show();
-    $("#sync-loader").show();
-    removePageMeta();
-  });
+            $("#sync-count").text("Processing " + processed + " of " + total + " " + config.plural);
+            $("#sync-log").scrollTop($("#sync-log")[0].scrollHeight);
+            $("#progress-bar-fill").css("width", (processed / total) * 100 + "%");
 
-  // Remove Media Meta
-  $("#remove-media-meta").click(function () {
-    $("#progress-bar").show();
-    $("#sync-loader").show();
-    removeMediaMeta();
-  });
+            if (processed < total) {
+              processNextBatch();
+            } else {
+              finishSync(config.plural + " synced successfully!");
+            }
+          } else if (!response.success) {
+            finishSync("Error: " + response.data.message);
+          } else {
+            finishSync("All " + config.plural + " are already synced.");
+          }
+        },
+        error: function (xhr, status, error) {
+          finishSync("Error during syncing: " + error);
+        }
+      });
+    }
+  }
 
-  // Remove Post Meta
-  $("#remove-post-meta").click(function () {
+  // Generic remove meta function
+  function removeContentMeta(type) {
+    var config = contentTypes[type];
+
     $("#progress-bar").show();
     $("#sync-loader").show();
-    removePostMeta();
-  });
+    $("#sync-log").html("");
+    $("#progress-bar-fill").css("width", "0%");
+
+    $.ajax({
+      url: wrms_data.ajax_url,
+      method: "POST",
+      data: {
+        action: config.removeAction,
+        nonce: wrms_data.nonce
+      },
+      success: function (response) {
+        if (response.success) {
+          var removed = response.data.removed;
+          var total = response.data.total;
+          $("#sync-count").text("Removed meta from " + removed + " of " + total + " " + config.plural);
+          $("#sync-log").append("<p>" + config.plural.charAt(0).toUpperCase() + config.plural.slice(1) + " meta removed successfully!</p>");
+          $("#progress-bar-fill").css("width", total > 0 ? (removed / total) * 100 + "%" : "100%");
+        } else {
+          $("#sync-status").append("<p>Error: " + response.data.message + "</p>");
+        }
+        hideLoader();
+        updateStats();
+      },
+      error: function (xhr, status, error) {
+        $("#sync-status").append("<p>Error: " + error + "</p>");
+        hideLoader();
+        updateStats();
+      }
+    });
+  }
+
+  function hideLoader() {
+    $("#sync-loader").hide();
+  }
+
+  function finishSync(message) {
+    hideLoader();
+    $("#sync-status").append("<p>" + message + "</p>");
+    updateStats();
+  }
+
+  // Bind sync buttons
+  $("#sync-products").click(function () { syncContentType("product"); });
+  $("#sync-categories").click(function () { syncContentType("category"); });
+  $("#sync-pages").click(function () { syncContentType("page"); });
+  $("#sync-media").click(function () { syncContentType("media"); });
+  $("#sync-posts").click(function () { syncContentType("post"); });
+
+  // Bind remove buttons
+  $("#remove-product-meta").click(function () { removeContentMeta("product"); });
+  $("#remove-category-meta").click(function () { removeContentMeta("category"); });
+  $("#remove-page-meta").click(function () { removeContentMeta("page"); });
+  $("#remove-media-meta").click(function () { removeContentMeta("media"); });
+  $("#remove-post-meta").click(function () { removeContentMeta("post"); });
 
   // Auto-sync toggle
   $("#wrms_auto_sync").on("change", function () {
-    updateAutoSync($(this).is(":checked"));
+    var isChecked = $(this).is(":checked");
+    $.ajax({
+      url: wrms_data.ajax_url,
+      method: "POST",
+      data: {
+        action: "wrms_update_auto_sync",
+        auto_sync: isChecked ? 1 : 0,
+        nonce: wrms_data.nonce
+      },
+      error: function (xhr, status, error) {
+        alert("Error updating auto-sync setting: " + error);
+      }
+    });
   });
 
   // Update Statistics
@@ -91,835 +223,58 @@ jQuery(document).ready(function ($) {
     updateStats();
   });
 
+  function updateStats() {
+    var button = $("#update-stats");
+    button.prop("disabled", true).text("Updating...");
+
+    $.ajax({
+      url: wrms_data.ajax_url,
+      type: "POST",
+      data: {
+        action: "wrms_update_stats",
+        nonce: wrms_data.nonce
+      },
+      success: function (response) {
+        if (response.success) {
+          var s = response.data;
+          $("#total-products").text(s.total_products);
+          $("#synced-products").text(s.synced_products);
+          $("#total-pages").text(s.total_pages);
+          $("#synced-pages").text(s.synced_pages);
+          $("#total-media").text(s.total_media);
+          $("#synced-media").text(s.synced_media);
+          $("#total-categories").text(s.total_categories);
+          $("#synced-categories").text(s.synced_categories);
+          $("#total-posts").text(s.total_posts);
+          $("#synced-posts").text(s.synced_posts);
+          $("#total-items").text(s.total_items);
+          $("#total-synced").text(s.total_synced);
+          $("#sync-percentage").text(s.sync_percentage + "%");
+          $("#last-updated").text(new Date(s.timestamp * 1000).toLocaleString());
+        }
+      },
+      complete: function () {
+        button.prop("disabled", false).text("Update Statistics");
+      }
+    });
+  }
+
   // Download URLs
   $("#download-urls").click(function (e) {
     e.preventDefault();
-    $("#progress-bar").show();
-    var urlTypes = $('input[name="url_types[]"]:checked')
-      .map(function () {
-        return this.value;
-      })
-      .get();
+    var urlTypes = $('input[name="url_types[]"]:checked').map(function () {
+      return this.value;
+    }).get();
 
     if (urlTypes.length === 0) {
-      $("#download-status").text(
-        "Please select at least one URL type to download."
-      );
+      $("#download-status").text("Please select at least one URL type to download.");
       return;
     }
 
-    downloadUrls(urlTypes);
-  });
-
-  function updateAutoSync(isChecked) {
-    $.ajax({
-      url: wrms_data.ajax_url,
-      method: "POST",
-      data: {
-        action: "wrms_update_auto_sync",
-        auto_sync: isChecked ? 1 : 0,
-        nonce: wrms_data.nonce,
-      },
-      success: function (response) {
-        if (!response.success) {
-          alert("Error updating auto-sync setting: " + response.data.message);
-        }
-      },
-      error: function (xhr, status, error) {
-        alert("Error updating auto-sync setting: " + error);
-      },
-    });
-  }
-
-function updateStats() {
-  var button = $("#update-stats");
-  button.prop("disabled", true).text("Updating...");
-
-  $.ajax({
-    url: wrms_data.ajax_url,
-    type: "POST",
-    data: {
-      action: "wrms_update_stats",
-      nonce: wrms_data.nonce,
-    },
-    success: function (response) {
-      if (response.success) {
-        var stats = response.data;
-        $("#total-products").text(stats.total_products);
-        $("#synced-products").text(stats.synced_products);
-        $("#total-pages").text(stats.total_pages);
-        $("#synced-pages").text(stats.synced_pages);
-        $("#total-media").text(stats.total_media);
-        $("#synced-media").text(stats.synced_media);
-        $("#total-categories").text(stats.total_categories);
-        $("#synced-categories").text(stats.synced_categories);
-        $("#total-posts").text(stats.total_posts);
-        $("#synced-posts").text(stats.synced_posts);
-        $("#total-items").text(stats.total_items);
-        $("#total-synced").text(stats.total_synced);
-        $("#sync-percentage").text(stats.sync_percentage + "%");
-        $("#last-updated").text(
-          new Date(stats.timestamp * 1000).toLocaleString()
-        );
-      } else {
-        alert("Failed to update statistics. Please try again.");
-      }
-    },
-    error: function (xhr, status, error) {
-      alert("An error occurred. Please try again. Error: " + error);
-      console.log(xhr.responseText);
-    },
-    complete: function () {
-      button.prop("disabled", false).text("Update Statistics");
-    },
-  });
-}
-
-  function syncProducts() {
-    var totalProducts = 0;
-    var processedProducts = 0;
-
-    $.ajax({
-      url: wrms_data.ajax_url,
-      method: "POST",
-      data: {
-        action: "wrms_get_product_count",
-        nonce: wrms_data.nonce,
-      },
-      success: function (response) {
-        if (response.success) {
-          totalProducts = response.data.count;
-          $("#sync-count").text(
-            "Processing 0 of " + totalProducts + " products"
-          );
-          $("#sync-loader").show();
-          $("#sync-log").html(""); // Clear log area
-          $("#progress-bar-fill").css("width", "0%"); // Reset progress bar
-
-          processNextProduct();
-        } else {
-          $("#sync-status").append(
-            "<p>Error retrieving product count: " +
-              response.data.message +
-              "</p>"
-          );
-        }
-      },
-      error: function (xhr, status, error) {
-        $("#sync-status").append(
-          "<p>Error retrieving product count: " + error + "</p>"
-        );
-      },
-    });
-
-    function processNextProduct() {
-      $.ajax({
-        url: wrms_data.ajax_url,
-        method: "POST",
-        data: {
-          action: "wrms_sync_next_product",
-          nonce: wrms_data.nonce,
-        },
-        success: function (response) {
-          if (response.success && response.data.processed > 0) {
-            processedProducts += response.data.processed;
-            $("#sync-count").text(
-              "Processing " +
-                processedProducts +
-                " of " +
-                totalProducts +
-                " products"
-            );
-
-            // Update log area
-            $("#sync-log").append(
-              "<p>Processed product " +
-                processedProducts +
-                ": " +
-                response.data.product.title +
-                " (ID: " +
-                response.data.product.id +
-                ")</p>"
-            );
-            $("#sync-log").scrollTop($("#sync-log")[0].scrollHeight); // Scroll to bottom
-
-            // Update progress bar
-            var progress = (processedProducts / totalProducts) * 100;
-            $("#progress-bar-fill").css("width", progress + "%");
-
-            if (processedProducts < totalProducts) {
-              processNextProduct();
-            } else {
-              $("#sync-loader").hide();
-              $("#sync-status").append("<p>Products synced successfully!</p>");
-              updateStats(); // Update statistics after all products are synced
-            }
-          } else if (!response.success) {
-            $("#sync-loader").hide();
-            $("#sync-status").append(
-              "<p>Error processing product: " + response.data.message + "</p>"
-            );
-            updateStats(); // Update statistics even if there's an error
-          } else {
-            $("#sync-loader").hide();
-            $("#sync-status").append(
-              "<p>All products are already synced or an error occurred.</p>"
-            );
-            updateStats(); // Update statistics after sync completion
-          }
-        },
-        error: function (xhr, status, error) {
-          $("#sync-loader").hide();
-          $("#sync-status").append(
-            "<p>An error occurred during syncing: " + error + "</p>"
-          );
-          updateStats(); // Update statistics even if there's an error
-        },
-      });
-    }
-  }
-
-  function syncCategories() {
-    var totalCategories = 0;
-    var processedCategories = 0;
-
-    $.ajax({
-      url: wrms_data.ajax_url,
-      method: "POST",
-      data: {
-        action: "wrms_get_category_count",
-        nonce: wrms_data.nonce,
-      },
-      success: function (response) {
-        if (response.success) {
-          totalCategories = response.data.count;
-          $("#sync-count").text(
-            "Processing 0 of " + totalCategories + " categories"
-          );
-          $("#sync-loader").show();
-          $("#sync-log").html(""); // Clear log area
-          $("#progress-bar-fill").css("width", "0%"); // Reset progress bar
-
-          processNextCategory();
-        } else {
-          $("#sync-status").append(
-            "<p>Error retrieving category count: " +
-              response.data.message +
-              "</p>"
-          );
-        }
-      },
-      error: function (xhr, status, error) {
-        $("#sync-status").append(
-          "<p>Error retrieving category count: " + error + "</p>"
-        );
-      },
-    });
-
-    function processNextCategory() {
-      $.ajax({
-        url: wrms_data.ajax_url,
-        method: "POST",
-        data: {
-          action: "wrms_sync_next_category",
-          nonce: wrms_data.nonce,
-        },
-        success: function (response) {
-          if (response.success && response.data.processed > 0) {
-            processedCategories += response.data.processed;
-            $("#sync-count").text(
-              "Processing " +
-                processedCategories +
-                " of " +
-                totalCategories +
-                " categories"
-            );
-
-            // Update log area
-            $("#sync-log").append(
-              "<p>Processed category " +
-                processedCategories +
-                ": " +
-                response.data.category.name +
-                " (ID: " +
-                response.data.category.id +
-                ")</p>"
-            );
-            $("#sync-log").scrollTop($("#sync-log")[0].scrollHeight); // Scroll to bottom
-
-            // Update progress bar
-            var progress = (processedCategories / totalCategories) * 100;
-            $("#progress-bar-fill").css("width", progress + "%");
-
-            if (processedCategories < totalCategories) {
-              processNextCategory();
-            } else {
-              $("#sync-loader").hide();
-              $("#sync-status").append(
-                "<p>Categories synced successfully!</p>"
-              );
-              updateStats(); // Update statistics after all categories are synced
-            }
-          } else if (!response.success) {
-            $("#sync-loader").hide();
-            $("#sync-status").append(
-              "<p>Error processing category: " + response.data.message + "</p>"
-            );
-            updateStats(); // Update statistics even if there's an error
-          } else {
-            $("#sync-loader").hide();
-            $("#sync-status").append(
-              "<p>All categories are already synced or an error occurred.</p>"
-            );
-            updateStats(); // Update statistics after sync completion
-          }
-        },
-        error: function (xhr, status, error) {
-          $("#sync-loader").hide();
-          $("#sync-status").append(
-            "<p>An error occurred during syncing: " + error + "</p>"
-          );
-          updateStats(); // Update statistics even if there's an error
-        },
-      });
-    }
-  }
-
-  function syncPages() {
-    var totalPages = 0;
-    var processedPages = 0;
-
-    $.ajax({
-      url: wrms_data.ajax_url,
-      method: "POST",
-      data: {
-        action: "wrms_get_page_count",
-        nonce: wrms_data.nonce,
-      },
-      success: function (response) {
-        if (response.success) {
-          totalPages = response.data.count;
-          $("#sync-count").text("Processing 0 of " + totalPages + " pages");
-          $("#sync-loader").show();
-          $("#sync-log").html(""); // Clear log area
-          $("#progress-bar-fill").css("width", "0%"); // Reset progress bar
-
-          processNextPage();
-        } else {
-          $("#sync-status").append(
-            "<p>Error retrieving page count: " + response.data.message + "</p>"
-          );
-        }
-      },
-      error: function (xhr, status, error) {
-        $("#sync-status").append(
-          "<p>Error retrieving page count: " + error + "</p>"
-        );
-      },
-    });
-
-    function processNextPage() {
-      $.ajax({
-        url: wrms_data.ajax_url,
-        method: "POST",
-        data: {
-          action: "wrms_sync_next_page",
-          nonce: wrms_data.nonce,
-        },
-        success: function (response) {
-          if (response.success && response.data.processed > 0) {
-            processedPages += response.data.processed;
-            $("#sync-count").text(
-              "Processing " + processedPages + " of " + totalPages + " pages"
-            );
-
-            // Update log area
-            $("#sync-log").append(
-              "<p>Processed page " +
-                processedPages +
-                ": " +
-                response.data.page.title +
-                " (ID: " +
-                response.data.page.id +
-                ")</p>"
-            );
-            $("#sync-log").scrollTop($("#sync-log")[0].scrollHeight); // Scroll to bottom
-
-            // Update progress bar
-            var progress = (processedPages / totalPages) * 100;
-            $("#progress-bar-fill").css("width", progress + "%");
-
-            if (processedPages < totalPages) {
-              processNextPage();
-            } else {
-              $("#sync-loader").hide();
-              $("#sync-status").append("<p>Pages synced successfully!</p>");
-              updateStats(); // Update statistics after all pages are synced
-            }
-          } else if (!response.success) {
-            $("#sync-loader").hide();
-            $("#sync-status").append(
-              "<p>Error processing page: " + response.data.message + "</p>"
-            );
-            updateStats(); // Update statistics even if there's an error
-          } else {
-            $("#sync-loader").hide();
-            $("#sync-status").append(
-              "<p>All pages are already synced or an error occurred.</p>"
-            );
-            updateStats(); // Update statistics after sync completion
-          }
-        },
-        error: function (xhr, status, error) {
-          $("#sync-loader").hide();
-          $("#sync-status").append(
-            "<p>An error occurred during syncing: " + error + "</p>"
-          );
-          updateStats(); // Update statistics even if there's an error
-        },
-      });
-    }
-  }
-
-  function syncMedia() {
-    var totalMedia = 0;
-    var processedMedia = 0;
-
-    $.ajax({
-      url: wrms_data.ajax_url,
-      method: "POST",
-      data: {
-        action: "wrms_get_media_count",
-        nonce: wrms_data.nonce,
-      },
-      success: function (response) {
-        if (response.success) {
-          totalMedia = response.data.count;
-          $("#sync-count").text(
-            "Processing 0 of " + totalMedia + " media items"
-          );
-          $("#sync-loader").show();
-          $("#sync-log").html(""); // Clear log area
-          $("#progress-bar-fill").css("width", "0%"); // Reset progress bar
-
-          processNextMedia();
-        } else {
-          $("#sync-status").append(
-            "<p>Error retrieving media count: " + response.data.message + "</p>"
-          );
-        }
-      },
-      error: function (xhr, status, error) {
-        $("#sync-status").append(
-          "<p>Error retrieving media count: " + error + "</p>"
-        );
-      },
-    });
-
-    function processNextMedia() {
-      $.ajax({
-        url: wrms_data.ajax_url,
-        method: "POST",
-        data: {
-          action: "wrms_sync_next_media",
-          nonce: wrms_data.nonce,
-        },
-        success: function (response) {
-          if (response.success && response.data.processed > 0) {
-            processedMedia += response.data.processed;
-            $("#sync-count").text(
-              "Processing " +
-                processedMedia +
-                " of " +
-                totalMedia +
-                " media items"
-            );
-
-            // Update log area
-            $("#sync-log").append(
-              "<p>Processed media " +
-                processedMedia +
-                ": " +
-                response.data.media.title +
-                " (ID: " +
-                response.data.media.id +
-                ")</p>"
-            );
-            $("#sync-log").scrollTop($("#sync-log")[0].scrollHeight); // Scroll to bottom
-
-            // Update progress bar
-            var progress = (processedMedia / totalMedia) * 100;
-            $("#progress-bar-fill").css("width", progress + "%");
-
-            if (processedMedia < totalMedia) {
-              processNextMedia();
-            } else {
-              $("#sync-loader").hide();
-              $("#sync-status").append(
-                "<p>Media items synced successfully!</p>"
-              );
-              updateStats(); // Update statistics after all media items are synced
-            }
-          } else if (!response.success) {
-            $("#sync-loader").hide();
-            $("#sync-status").append(
-              "<p>Error processing media: " + response.data.message + "</p>"
-            );
-            updateStats(); // Update statistics even if there's an error
-          } else {
-            $("#sync-loader").hide();
-            $("#sync-status").append(
-              "<p>All media items are already synced or an error occurred.</p>"
-            );
-            updateStats(); // Update statistics after sync completion
-          }
-        },
-        error: function (xhr, status, error) {
-          $("#sync-loader").hide();
-          $("#sync-status").append(
-            "<p>An error occurred during syncing: " + error + "</p>"
-          );
-          updateStats(); // Update statistics even if there's an error
-        },
-      });
-    }
-  }
-
-  function syncPosts() {
-    var totalPosts = 0;
-    var processedPosts = 0;
-
-    $.ajax({
-      url: wrms_data.ajax_url,
-      method: "POST",
-      data: {
-        action: "wrms_get_post_count",
-        nonce: wrms_data.nonce,
-      },
-      success: function (response) {
-        if (response.success) {
-          totalPosts = response.data.count;
-          $("#sync-count").text("Processing 0 of " + totalPosts + " posts");
-          $("#sync-loader").show();
-          $("#sync-log").html(""); // Clear log area
-          $("#progress-bar-fill").css("width", "0%"); // Reset progress bar
-
-          processNextPost();
-        } else {
-          $("#sync-status").append(
-            "<p>Error retrieving post count: " + response.data.message + "</p>"
-          );
-        }
-      },
-      error: function (xhr, status, error) {
-        $("#sync-status").append(
-          "<p>Error retrieving post count: " + error + "</p>"
-        );
-      },
-    });
-
-    function processNextPost() {
-      $.ajax({
-        url: wrms_data.ajax_url,
-        method: "POST",
-        data: {
-          action: "wrms_sync_next_post",
-          nonce: wrms_data.nonce,
-        },
-        success: function (response) {
-          if (response.success && response.data.processed > 0) {
-            processedPosts += response.data.processed;
-            $("#sync-count").text(
-              "Processing " + processedPosts + " of " + totalPosts + " posts"
-            );
-
-            // Update log area
-            $("#sync-log").append(
-              "<p>Processed post " +
-                processedPosts +
-                ": " +
-                response.data.post.title +
-                " (ID: " +
-                response.data.post.id +
-                ")</p>"
-            );
-            $("#sync-log").scrollTop($("#sync-log")[0].scrollHeight); // Scroll to bottom
-
-            // Update progress bar
-            var progress = (processedPosts / totalPosts) * 100;
-            $("#progress-bar-fill").css("width", progress + "%");
-
-            if (processedPosts < totalPosts) {
-              processNextPost();
-            } else {
-              $("#sync-loader").hide();
-              $("#sync-status").append("<p>Posts synced successfully!</p>");
-              updateStats(); // Update statistics after all posts are synced
-            }
-          } else if (!response.success) {
-            $("#sync-loader").hide();
-            $("#sync-status").append(
-              "<p>Error processing post: " + response.data.message + "</p>"
-            );
-            updateStats(); // Update statistics even if there's an error
-          } else {
-            $("#sync-loader").hide();
-            $("#sync-status").append(
-              "<p>All posts are already synced or an error occurred.</p>"
-            );
-            updateStats(); // Update statistics after sync completion
-          }
-        },
-        error: function (xhr, status, error) {
-          $("#sync-loader").hide();
-          $("#sync-status").append(
-            "<p>An error occurred during syncing: " + error + "</p>"
-          );
-          updateStats(); // Update statistics even if there's an error
-        },
-      });
-    }
-  }
-
-  function removeProductMeta() {
-    $("#sync-loader").show();
-    $("#sync-log").html(""); // Clear log area
-    $("#progress-bar-fill").css("width", "0%"); // Reset progress bar
-
-    $.ajax({
-      url: wrms_data.ajax_url,
-      method: "POST",
-      data: {
-        action: "wrms_remove_product_meta",
-        nonce: wrms_data.nonce,
-      },
-      success: function (response) {
-        if (response.success) {
-          $("#sync-count").text(
-            "Removed meta from " +
-              response.data.removed +
-              " of " +
-              response.data.total +
-              " products"
-          );
-          $("#sync-log").append("<p>Product meta removed successfully!</p>");
-          $("#sync-log").scrollTop($("#sync-log")[0].scrollHeight);
-
-          // Update progress bar
-          var progress = (response.data.removed / response.data.total) * 100;
-          $("#progress-bar-fill").css("width", progress + "%");
-
-          updateStats(); // Update statistics after successful removal
-        } else {
-          $("#sync-status").append(
-            "<p>Error removing product meta: " + response.data.message + "</p>"
-          );
-        }
-        $("#sync-loader").hide();
-        updateStats(); // Always update statistics
-      },
-      error: function (xhr, status, error) {
-        $("#sync-loader").hide();
-        $("#sync-status").append(
-          "<p>An error occurred during product meta removal: " + error + "</p>"
-        );
-        updateStats(); // Update statistics even if there's an error
-      },
-    });
-  }
-
-  function removeCategoryMeta() {
-    $("#sync-loader").show();
-    $("#sync-log").html(""); // Clear log area
-    $("#progress-bar-fill").css("width", "0%"); // Reset progress bar
-
-    $.ajax({
-      url: wrms_data.ajax_url,
-      method: "POST",
-      data: {
-        action: "wrms_remove_category_meta",
-        nonce: wrms_data.nonce,
-      },
-      success: function (response) {
-        if (response.success) {
-          $("#sync-count").text(
-            "Removed meta from " +
-              response.data.removed +
-              " of " +
-              response.data.total +
-              " categories"
-          );
-          $("#sync-log").append("<p>Category meta removed successfully!</p>");
-          $("#sync-log").scrollTop($("#sync-log")[0].scrollHeight);
-
-          // Update progress bar
-          var progress = (response.data.removed / response.data.total) * 100;
-          $("#progress-bar-fill").css("width", progress + "%");
-
-          updateStats(); // Update statistics after successful removal
-        } else {
-          $("#sync-status").append(
-            "<p>Error removing category meta: " + response.data.message + "</p>"
-          );
-        }
-        $("#sync-loader").hide();
-        updateStats(); // Always update statistics
-      },
-      error: function (xhr, status, error) {
-        $("#sync-loader").hide();
-        $("#sync-status").append(
-          "<p>An error occurred during category meta removal: " + error + "</p>"
-        );
-        updateStats(); // Update statistics even if there's an error
-      },
-    });
-  }
-
-  function removePageMeta() {
-    $("#sync-loader").show();
-    $("#sync-log").html(""); // Clear log area
-    $("#progress-bar-fill").css("width", "0%"); // Reset progress bar
-
-    $.ajax({
-      url: wrms_data.ajax_url,
-      method: "POST",
-      data: {
-        action: "wrms_remove_page_meta",
-        nonce: wrms_data.nonce,
-      },
-      success: function (response) {
-        if (response.success) {
-          $("#sync-count").text(
-            "Removed meta from " +
-              response.data.removed +
-              " of " +
-              response.data.total +
-              " pages"
-          );
-          $("#sync-log").append("<p>Page meta removed successfully!</p>");
-          $("#sync-log").scrollTop($("#sync-log")[0].scrollHeight);
-
-          // Update progress bar
-          var progress = (response.data.removed / response.data.total) * 100;
-          $("#progress-bar-fill").css("width", progress + "%");
-
-          updateStats(); // Update statistics after successful removal
-        } else {
-          $("#sync-status").append(
-            "<p>Error removing page meta: " + response.data.message + "</p>"
-          );
-        }
-        $("#sync-loader").hide();
-        updateStats(); // Always update statistics
-      },
-      error: function (xhr, status, error) {
-        $("#sync-loader").hide();
-        $("#sync-status").append(
-          "<p>An error occurred during page meta removal: " + error + "</p>"
-        );
-        updateStats(); // Update statistics even if there's an error
-      },
-    });
-  }
-
-  function removeMediaMeta() {
-    $("#sync-loader").show();
-    $("#sync-log").html(""); // Clear log area
-    $("#progress-bar-fill").css("width", "0%"); // Reset progress bar
-
-    $.ajax({
-      url: wrms_data.ajax_url,
-      method: "POST",
-      data: {
-        action: "wrms_remove_media_meta",
-        nonce: wrms_data.nonce,
-      },
-      success: function (response) {
-        if (response.success) {
-          $("#sync-count").text(
-            "Removed meta from " +
-              response.data.removed +
-              " of " +
-              response.data.total +
-              " media items"
-          );
-          $("#sync-log").append("<p>Media meta removed successfully!</p>");
-          $("#sync-log").scrollTop($("#sync-log")[0].scrollHeight);
-
-          // Update progress bar
-          var progress = (response.data.removed / response.data.total) * 100;
-          $("#progress-bar-fill").css("width", progress + "%");
-
-          updateStats(); // Update statistics after successful removal
-        } else {
-          $("#sync-status").append(
-            "<p>Error removing media meta: " + response.data.message + "</p>"
-          );
-        }
-        $("#sync-loader").hide();
-        updateStats(); // Always update statistics
-      },
-      error: function (xhr, status, error) {
-        $("#sync-loader").hide();
-        $("#sync-status").append(
-          "<p>An error occurred during media meta removal: " + error + "</p>"
-        );
-        updateStats(); // Update statistics even if there's an error
-      },
-    });
-  }
-
-  function removePostMeta() {
-    $("#sync-loader").show();
-    $("#sync-log").html(""); // Clear log area
-    $("#progress-bar-fill").css("width", "0%"); // Reset progress bar
-
-    $.ajax({
-      url: wrms_data.ajax_url,
-      method: "POST",
-      data: {
-        action: "wrms_remove_post_meta",
-        nonce: wrms_data.nonce,
-      },
-      success: function (response) {
-        if (response.success) {
-          $("#sync-count").text(
-            "Removed meta from " +
-              response.data.removed +
-              " of " +
-              response.data.total +
-              " posts"
-          );
-          $("#sync-log").append("<p>Post meta removed successfully!</p>");
-          $("#sync-log").scrollTop($("#sync-log")[0].scrollHeight);
-
-          // Update progress bar
-          var progress = (response.data.removed / response.data.total) * 100;
-          $("#progress-bar-fill").css("width", progress + "%");
-
-          updateStats(); // Update statistics after successful removal
-        } else {
-          $("#sync-status").append(
-            "<p>Error removing post meta: " + response.data.message + "</p>"
-          );
-        }
-        $("#sync-loader").hide();
-        updateStats(); // Always update statistics
-      },
-      error: function (xhr, status, error) {
-        $("#sync-loader").hide();
-        $("#sync-status").append(
-          "<p>An error occurred during post meta removal: " + error + "</p>"
-        );
-        updateStats(); // Update statistics even if there's an error
-      },
-    });
-  }
-
-  function downloadUrls(urlTypes) {
+    $("#progress-bar").show();
     $("#download-loader").show();
-    $("#download-log").html(""); // Clear log area
-    $("#download-progress-bar-fill").css("width", "0%"); // Reset progress bar
+    $("#download-log").html("");
+    $("#download-progress-bar-fill").css("width", "0%");
 
     var offset = 0;
     var chunkSize = 2000;
@@ -933,47 +288,22 @@ function updateStats() {
           nonce: wrms_data.nonce,
           offset: offset,
           chunk_size: chunkSize,
-          url_types: urlTypes,
+          url_types: urlTypes
         },
         success: function (response) {
           if (response.success && response.data.urls.length > 0) {
-            // Create and download the file
-            var blob = new Blob([response.data.urls.join("\n")], {
-              type: "text/plain",
-            });
+            var blob = new Blob([response.data.urls.join("\n")], { type: "text/plain" });
             var link = document.createElement("a");
             link.href = window.URL.createObjectURL(blob);
-            link.download =
-              "wordpress_urls_" +
-              offset +
-              "-" +
-              (offset + response.data.urls.length) +
-              ".txt";
+            link.download = "urls_" + offset + "-" + (offset + response.data.urls.length) + ".txt";
             link.click();
 
-            // Update status
-            $("#download-count").text(
-              "Downloaded URLs " +
-                offset +
-                " to " +
-                (offset + response.data.urls.length)
-            );
-            $("#download-log").append(
-              "<p>Downloaded URLs " +
-                offset +
-                " to " +
-                (offset + response.data.urls.length) +
-                "</p>"
-            );
+            var end = offset + response.data.urls.length;
+            $("#download-count").text("Downloaded URLs " + offset + " to " + end);
+            $("#download-log").append("<p>Downloaded URLs " + offset + " to " + end + "</p>");
             $("#download-log").scrollTop($("#download-log")[0].scrollHeight);
+            $("#download-progress-bar-fill").css("width", (end / response.data.total) * 100 + "%");
 
-            // Update progress bar
-            var progress =
-              ((offset + response.data.urls.length) / response.data.total) *
-              100;
-            $("#download-progress-bar-fill").css("width", progress + "%");
-
-            // Move to next chunk
             offset += chunkSize;
             downloadChunk();
           } else {
@@ -984,194 +314,29 @@ function updateStats() {
         },
         error: function (xhr, status, error) {
           $("#download-loader").hide();
-          $("#download-status").append(
-            "<p>An error occurred during URL download: " + error + "</p>"
-          );
-        },
+          $("#download-status").append("<p>Error: " + error + "</p>");
+        }
       });
     }
 
     downloadChunk();
-  }
-
-  // Function to handle manual sync
-  $("#manual-sync").click(function () {
-    $.ajax({
-      url: wrms_data.ajax_url,
-      method: "POST",
-      data: {
-        action: "wrms_manual_sync",
-        nonce: wrms_data.nonce,
-      },
-      success: function (response) {
-        if (response.success) {
-          alert("Manual sync initiated successfully.");
-        } else {
-          alert("Error initiating manual sync: " + response.data.message);
-        }
-      },
-      error: function (xhr, status, error) {
-        alert("An error occurred while initiating manual sync: " + error);
-      },
-    });
   });
 
-  // Function to handle sitemap generation
-  $("#generate-sitemap").click(function () {
-    $.ajax({
-      url: wrms_data.ajax_url,
-      method: "POST",
-      data: {
-        action: "wrms_generate_sitemap",
-        nonce: wrms_data.nonce,
-      },
-      success: function (response) {
-        if (response.success) {
-          alert("Sitemap generated successfully.");
-        } else {
-          alert("Error generating sitemap: " + response.data.message);
-        }
-      },
-      error: function (xhr, status, error) {
-        alert("An error occurred while generating sitemap: " + error);
-      },
-    });
-  });
-
-  // Function to check if a URL exists
-  $("#check-url").click(function () {
-    var url = $("#url-input").val();
-    $.ajax({
-      url: wrms_data.ajax_url,
-      method: "POST",
-      data: {
-        action: "wrms_check_url",
-        nonce: wrms_data.nonce,
-        url: url,
-      },
-      success: function (response) {
-        if (response.success) {
-          if (response.data.exists) {
-            alert("The URL exists in the database.");
-          } else {
-            alert("The URL does not exist in the database.");
-          }
-        } else {
-          alert("Error checking URL: " + response.data.message);
-        }
-      },
-      error: function (xhr, status, error) {
-        alert("An error occurred while checking the URL: " + error);
-      },
-    });
-  });
-
-  // Function to get last sync time
-function getLastSyncTime() {
+  // Get last sync time on page load
   $.ajax({
     url: wrms_data.ajax_url,
     method: "POST",
     data: {
       action: "wrms_get_last_sync_time",
-      nonce: wrms_data.nonce,
+      nonce: wrms_data.nonce
     },
     success: function (response) {
-      if (response.success) {
-        $("#last-sync-time").text("Last sync: " + response.data.last_sync_time);
-      } else {
-        console.error("Error getting last sync time: " + response.data.message);
+      if (response.success && response.data.last_sync_time) {
+        var timestamp = response.data.last_sync_time;
+        if (timestamp > 0) {
+          $("#last-sync-time").text("Last sync: " + new Date(timestamp * 1000).toLocaleString());
+        }
       }
-    },
-    error: function (xhr, status, error) {
-      console.error("An error occurred while getting last sync time: " + error);
-    },
-  });
-}
-
-  // Call getLastSyncTime when the page loads
-  getLastSyncTime();
-
-  // Function to get sync progress
-  function getSyncProgress() {
-    $.ajax({
-      url: wrms_data.ajax_url,
-      method: "POST",
-      data: {
-        action: "wrms_get_sync_progress",
-        nonce: wrms_data.nonce,
-      },
-      success: function (response) {
-        if (response.success) {
-          var progress = response.data;
-          $("#sync-progress").text(
-            "Sync Progress: " + progress.sync_percentage + "%"
-          );
-          $("#total-items").text("Total Items: " + progress.total_items);
-          $("#synced-items").text("Synced Items: " + progress.total_synced);
-        } else {
-          console.error(
-            "Error getting sync progress: " + response.data.message
-          );
-        }
-      },
-      error: function (xhr, status, error) {
-        console.error(
-          "An error occurred while getting sync progress: " + error
-        );
-      },
-    });
-  }
-
-  // Call getSyncProgress periodically (e.g., every 5 seconds)
-  setInterval(getSyncProgress, 5000);
-
-  // Function to cancel ongoing sync
-  $("#cancel-sync").click(function () {
-    $.ajax({
-      url: wrms_data.ajax_url,
-      method: "POST",
-      data: {
-        action: "wrms_cancel_sync",
-        nonce: wrms_data.nonce,
-      },
-      success: function (response) {
-        if (response.success) {
-          alert("Sync cancellation initiated.");
-        } else {
-          alert("Error cancelling sync: " + response.data.message);
-        }
-      },
-      error: function (xhr, status, error) {
-        alert("An error occurred while cancelling sync: " + error);
-      },
-    });
-  });
-
-  // Function to reset plugin data
-  $("#reset-plugin").click(function () {
-    if (
-      confirm(
-        "Are you sure you want to reset all plugin data? This action cannot be undone."
-      )
-    ) {
-      $.ajax({
-        url: wrms_data.ajax_url,
-        method: "POST",
-        data: {
-          action: "wrms_reset_plugin",
-          nonce: wrms_data.nonce,
-        },
-        success: function (response) {
-          if (response.success) {
-            alert("Plugin data reset successfully. Please refresh the page.");
-          } else {
-            alert("Error resetting plugin data: " + response.data.message);
-          }
-        },
-        error: function (xhr, status, error) {
-          alert("An error occurred while resetting plugin data: " + error);
-        },
-      });
     }
   });
 });

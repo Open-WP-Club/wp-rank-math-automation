@@ -3,7 +3,7 @@
  * Plugin Name:             WordPress RankMath Sync
  * Plugin URI:              https://github.com/MrGKanev/wo-rank-math-automation/
  * Description:             Copies WooCommerce product, category, WordPress post, page, and media information to RankMath's meta information.
- * Version:                 0.0.5
+ * Version:                 0.0.6
  * Author:                  Gabriel Kanev
  * Author URI:              https://gkanev.com
  * License:                 GPL-2.0 License
@@ -19,7 +19,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('WRMS_VERSION', '0.0.5');
+define('WRMS_VERSION', '0.0.6');
 define('WRMS_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('WRMS_PLUGIN_URL', plugin_dir_url(__FILE__));
 

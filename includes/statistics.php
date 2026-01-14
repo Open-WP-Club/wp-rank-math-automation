@@ -4,83 +4,67 @@ if (!defined('ABSPATH')) {
   exit;
 }
 
-// Function to calculate and cache statistics
+/**
+ * Count synced posts by post type using optimized database query.
+ * Much faster than get_posts() with meta_query for large datasets.
+ */
+function wrms_count_synced_posts($post_type, $post_status = 'publish')
+{
+  global $wpdb;
+
+  return (int) $wpdb->get_var($wpdb->prepare(
+    "SELECT COUNT(DISTINCT p.ID)
+     FROM {$wpdb->posts} p
+     INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id
+     WHERE p.post_type = %s
+     AND p.post_status = %s
+     AND pm.meta_key = '_wrms_synced'
+     AND pm.meta_value = '1'",
+    $post_type,
+    $post_status
+  ));
+}
+
+/**
+ * Count synced terms by taxonomy using optimized database query.
+ */
+function wrms_count_synced_terms($taxonomy)
+{
+  global $wpdb;
+
+  return (int) $wpdb->get_var($wpdb->prepare(
+    "SELECT COUNT(DISTINCT t.term_id)
+     FROM {$wpdb->terms} t
+     INNER JOIN {$wpdb->term_taxonomy} tt ON t.term_id = tt.term_id
+     INNER JOIN {$wpdb->termmeta} tm ON t.term_id = tm.term_id
+     WHERE tt.taxonomy = %s
+     AND tm.meta_key = '_wrms_synced'
+     AND tm.meta_value = '1'",
+    $taxonomy
+  ));
+}
+
+/**
+ * Calculate and cache statistics using optimized queries.
+ */
 function wrms_calculate_and_cache_stats()
 {
-  $total_products = wp_count_posts('product')->publish;
-  $total_pages = wp_count_posts('page')->publish;
-  $total_media = wp_count_posts('attachment')->inherit;
-  $total_categories = wp_count_terms('product_cat');
-  $total_posts = wp_count_posts('post')->publish;
+  // Get totals (these are already optimized by WordPress)
+  $total_products = (int) wp_count_posts('product')->publish;
+  $total_pages = (int) wp_count_posts('page')->publish;
+  $total_media = (int) wp_count_posts('attachment')->inherit;
+  $total_categories = (int) wp_count_terms('product_cat');
+  $total_posts = (int) wp_count_posts('post')->publish;
 
-  $synced_products = count(get_posts(array(
-    'post_type' => 'product',
-    'posts_per_page' => -1,
-    'fields' => 'ids',
-    'meta_query' => array(
-      array(
-        'key' => '_wrms_synced',
-        'value' => '1',
-        'compare' => '='
-      )
-    )
-  )));
-
-  $synced_pages = count(get_posts(array(
-    'post_type' => 'page',
-    'posts_per_page' => -1,
-    'fields' => 'ids',
-    'meta_query' => array(
-      array(
-        'key' => '_wrms_synced',
-        'value' => '1',
-        'compare' => '='
-      )
-    )
-  )));
-
-  $synced_media = count(get_posts(array(
-    'post_type' => 'attachment',
-    'posts_per_page' => -1,
-    'fields' => 'ids',
-    'meta_query' => array(
-      array(
-        'key' => '_wrms_synced',
-        'value' => '1',
-        'compare' => '='
-      )
-    )
-  )));
-
-  $synced_categories = count(get_terms(array(
-    'taxonomy' => 'product_cat',
-    'hide_empty' => false,
-    'fields' => 'ids',
-    'meta_query' => array(
-      array(
-        'key' => '_wrms_synced',
-        'value' => '1',
-        'compare' => '='
-      )
-    )
-  )));
-
-  $synced_posts = count(get_posts(array(
-    'post_type' => 'post',
-    'posts_per_page' => -1,
-    'fields' => 'ids',
-    'meta_query' => array(
-      array(
-        'key' => '_wrms_synced',
-        'value' => '1',
-        'compare' => '='
-      )
-    )
-  )));
+  // Get synced counts using optimized queries
+  $synced_products = wrms_count_synced_posts('product', 'publish');
+  $synced_pages = wrms_count_synced_posts('page', 'publish');
+  $synced_media = wrms_count_synced_posts('attachment', 'inherit');
+  $synced_categories = wrms_count_synced_terms('product_cat');
+  $synced_posts = wrms_count_synced_posts('post', 'publish');
 
   $total_items = $total_products + $total_pages + $total_media + $total_categories + $total_posts;
   $total_synced = $synced_products + $synced_pages + $synced_media + $synced_categories + $synced_posts;
-
   $sync_percentage = $total_items > 0 ? round(($total_synced / $total_items) * 100, 2) : 0;
 
   $stats = array(
@@ -101,11 +85,12 @@ function wrms_calculate_and_cache_stats()
   );
 
   update_option('wrms_stats_cache', $stats);
-
   return $stats;
 }
 
-// Function to get cached stats or calculate if not available
+/**
+ * Get cached stats or calculate if not available.
+ */
 function wrms_get_stats()
 {
   $stats = get_option('wrms_stats_cache');
